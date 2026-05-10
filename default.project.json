@@ -1,0 +1,15 @@
+{
+    "name": "Trampoline Park",
+    "tree": {
+        "$className": "DataModel",
+        "ServerScriptService": {
+            "$className": "ServerScriptService",
+            "$path": "src/server"
+        },
+        "StarterPlayer": {
+            "StarterPlayerScripts": {
+                "$path": "src/client"
+            }
+        }
+    }
+}
