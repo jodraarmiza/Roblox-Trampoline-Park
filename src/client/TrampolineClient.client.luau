@@ -6,11 +6,19 @@ local UserInputService  = game:GetService("UserInputService")
 local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
-local remotes          = ReplicatedStorage:WaitForChild("TrampolineRemotes")
-local backflipEvent    = remotes:WaitForChild("BackflipRequest")
-local backflipApproved = remotes:WaitForChild("BackflipApproved")
-local bounceReward     = remotes:WaitForChild("BounceReward")
-local currencyUpdate   = remotes:WaitForChild("CurrencyUpdate")
+local remotes        = ReplicatedStorage:WaitForChild("TrampolineRemotes")
+local styleRequest   = remotes:WaitForChild("StyleRequest")
+local styleApproved  = remotes:WaitForChild("StyleApproved")
+local bounceReward   = remotes:WaitForChild("BounceReward")
+local currencyUpdate = remotes:WaitForChild("CurrencyUpdate")
+local stylesUpdate   = remotes:WaitForChild("StylesUpdate")
+
+-- ─── Animation IDs per style ──────────────────────────────────────────────────
+local STYLE_ANIM_IDS = {
+	Backflip  = "rbxassetid://87380725109308",
+	FrontFlip = "rbxassetid://127455590041801",
+	SideFlip  = "rbxassetid://138690053556375",
+}
 
 -- ─── Bounce parameters ───────────────────────────────────────────────────────
 local GRAVITY     = workspace.Gravity
@@ -33,16 +41,31 @@ local function launchVelocity(h: number): number
 	return math.sqrt(2 * GRAVITY * h)
 end
 
--- ─── Item definitions ────────────────────────────────────────────────────────
-local ITEMS = {
+-- ─── Item catalog (semua style yang mungkin ada) ─────────────────────────────
+local ITEM_CATALOG = {
 	{
+		id   = "Backflip",
 		name = "Backflip",
-		key = Enum.KeyCode.One,
-		onTrigger = function()
-			backflipEvent:FireServer()
-		end,
+		key  = Enum.KeyCode.One,
+		onTrigger = function() styleRequest:FireServer("Backflip") end,
+	},
+	{
+		id   = "FrontFlip",
+		name = "Front Flip",
+		key  = Enum.KeyCode.Two,
+		onTrigger = function() styleRequest:FireServer("FrontFlip") end,
+	},
+	{
+		id   = "SideFlip",
+		name = "Side Flip",
+		key  = Enum.KeyCode.Three,
+		onTrigger = function() styleRequest:FireServer("SideFlip") end,
 	},
 }
+
+-- ITEMS yang aktif = hanya yang sudah dibeli, diupdate oleh stylesUpdate event
+local ITEMS: { any } = {}
+local ownedStyles: { [string]: true } = {}
 
 -- ─── Hotbar UI ───────────────────────────────────────────────────────────────
 local screenGui = Instance.new("ScreenGui")
@@ -82,59 +105,80 @@ local function updateSlotVisuals()
 	end
 end
 
-for i, item in ITEMS do
-	local slot = Instance.new("Frame")
-	slot.Name = "Slot" .. i
-	slot.Size = UDim2.new(0, 90, 0, 68)
-	slot.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-	slot.BackgroundTransparency = 0.3
-	slot.BorderSizePixel = 0
-	slot.Parent = hotbarFrame
+local function rebuildHotbar()
+	-- Hapus slot lama
+	for _, slot in slots do slot:Destroy() end
+	slots = {}
+	selectedIndex = 0
 
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 10)
-	corner.Parent = slot
+	-- Rebuild hanya dari styles yang sudah dibeli
+	ITEMS = {}
+	for _, catalog in ITEM_CATALOG do
+		if ownedStyles[catalog.id] then
+			table.insert(ITEMS, catalog)
+		end
+	end
 
-	local stroke = Instance.new("UIStroke")
-	stroke.Color = Color3.fromRGB(80, 80, 80)
-	stroke.Thickness = 1.5
-	stroke.Parent = slot
+	for i, item in ITEMS do
+		local slot = Instance.new("Frame")
+		slot.Name = "Slot" .. i
+		slot.Size = UDim2.new(0, 90, 0, 68)
+		slot.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+		slot.BackgroundTransparency = 0.3
+		slot.BorderSizePixel = 0
+		slot.Parent = hotbarFrame
 
-	local numLabel = Instance.new("TextLabel")
-	numLabel.Size = UDim2.new(1, 0, 0, 22)
-	numLabel.Position = UDim2.new(0, 0, 0, 5)
-	numLabel.BackgroundTransparency = 1
-	numLabel.Text = tostring(i)
-	numLabel.TextColor3 = Color3.fromRGB(160, 160, 160)
-	numLabel.Font = Enum.Font.GothamBold
-	numLabel.TextSize = 14
-	numLabel.Parent = slot
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0, 10)
+		corner.Parent = slot
 
-	local nameLabel = Instance.new("TextLabel")
-	nameLabel.Size = UDim2.new(1, -8, 0, 22)
-	nameLabel.Position = UDim2.new(0, 4, 1, -28)
-	nameLabel.BackgroundTransparency = 1
-	nameLabel.Text = item.name
-	nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	nameLabel.Font = Enum.Font.Gotham
-	nameLabel.TextSize = 13
-	nameLabel.TextXAlignment = Enum.TextXAlignment.Center
-	nameLabel.Parent = slot
+		local stroke = Instance.new("UIStroke")
+		stroke.Color = Color3.fromRGB(80, 80, 80)
+		stroke.Thickness = 1.5
+		stroke.Parent = slot
 
-	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.new(1, 0, 1, 0)
-	btn.BackgroundTransparency = 1
-	btn.Text = ""
-	btn.Parent = slot
+		local numLabel = Instance.new("TextLabel")
+		numLabel.Size = UDim2.new(1, 0, 0, 22)
+		numLabel.Position = UDim2.new(0, 0, 0, 5)
+		numLabel.BackgroundTransparency = 1
+		numLabel.Text = tostring(i)
+		numLabel.TextColor3 = Color3.fromRGB(160, 160, 160)
+		numLabel.Font = Enum.Font.GothamBold
+		numLabel.TextSize = 14
+		numLabel.Parent = slot
 
-	local idx = i
-	btn.MouseButton1Click:Connect(function()
-		selectedIndex = if selectedIndex == idx then 0 else idx
-		updateSlotVisuals()
-	end)
+		local nameLabel = Instance.new("TextLabel")
+		nameLabel.Size = UDim2.new(1, -8, 0, 22)
+		nameLabel.Position = UDim2.new(0, 4, 1, -28)
+		nameLabel.BackgroundTransparency = 1
+		nameLabel.Text = item.name
+		nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+		nameLabel.Font = Enum.Font.Gotham
+		nameLabel.TextSize = 13
+		nameLabel.TextXAlignment = Enum.TextXAlignment.Center
+		nameLabel.Parent = slot
 
-	slots[i] = slot
+		local btn = Instance.new("TextButton")
+		btn.Size = UDim2.new(1, 0, 1, 0)
+		btn.BackgroundTransparency = 1
+		btn.Text = ""
+		btn.Parent = slot
+
+		local idx = i
+		btn.MouseButton1Click:Connect(function()
+			selectedIndex = if selectedIndex == idx then 0 else idx
+			updateSlotVisuals()
+		end)
+
+		slots[i] = slot
+	end
 end
+
+-- Update hotbar saat dapat styles dari server
+stylesUpdate.OnClientEvent:Connect(function(owned: { [string]: true })
+	ownedStyles = owned
+	rebuildHotbar()
+end)
 
 UserInputService.InputBegan:Connect(function(input, processed)
 	if processed then return end
@@ -228,9 +272,12 @@ RunService.Heartbeat:Connect(function()
 	end
 end)
 
--- ─── Backflip animation ───────────────────────────────────────────────────────
-backflipApproved.OnClientEvent:Connect(function()
+-- ─── Style animation ──────────────────────────────────────────────────────────
+styleApproved.OnClientEvent:Connect(function(styleId: string)
 	if isDoingBackflip then return end
+
+	local animId = STYLE_ANIM_IDS[styleId]
+	if not animId then return end
 
 	local char = player.Character
 	if not char then return end
@@ -241,7 +288,7 @@ backflipApproved.OnClientEvent:Connect(function()
 	wantsBackflipAfterAnim = false
 
 	local anim = Instance.new("Animation")
-	anim.AnimationId = "rbxassetid://87380725109308"
+	anim.AnimationId = animId
 
 	local track = humanoid:LoadAnimation(anim)
 	track:Play()
