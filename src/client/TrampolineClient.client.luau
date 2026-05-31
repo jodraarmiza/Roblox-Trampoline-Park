@@ -12,20 +12,40 @@ local styleApproved  = remotes:WaitForChild("StyleApproved")
 local bounceReward   = remotes:WaitForChild("BounceReward")
 local currencyUpdate = remotes:WaitForChild("CurrencyUpdate")
 local stylesUpdate   = remotes:WaitForChild("StylesUpdate")
+local statsUpdate    = remotes:WaitForChild("StatsUpdate")
+local allocateStat   = remotes:WaitForChild("AllocateStat")
 
 -- ─── Animation IDs per style ──────────────────────────────────────────────────
 local STYLE_ANIM_IDS = {
 	Backflip  = "rbxassetid://87380725109308",
 	FrontFlip = "rbxassetid://127455590041801",
 	SideFlip  = "rbxassetid://138690053556375",
+	StarJump  = "rbxassetid://130044428921240",
+	CanonBall = "rbxassetid://111071318265188",
+	Spin360   = "rbxassetid://120272455020042",
+	Double360   = "rbxassetid://112865783046386",
+	Backflip360  = "rbxassetid://140263521639075",
+	FlatBackflip  = "rbxassetid://122274246065853",
+	FlatFrontflip = "rbxassetid://109560729203557",
+	Superman       = "rbxassetid://98253651217655",
+	DoubleBackflip  = "rbxassetid://105678898467513",
+	DoubleFrontflip = "rbxassetid://91583020089351",
+	LazyBoy         = "rbxassetid://84682000343737",
 }
 
--- ─── Bounce parameters ───────────────────────────────────────────────────────
+-- ─── Bounce parameters (base values, diupdate oleh stats) ────────────────────
 local GRAVITY     = workspace.Gravity
 local MIN_HEIGHT  = 2
-local MAX_HEIGHT  = 36
-local HEIGHT_STEP = 2
+local MAX_HEIGHT  = 36   -- +4 per jumpHeight point
+local HEIGHT_STEP = 2    -- +0.3 per jumpSpeed point
 local BOUNCE_CD   = 0.35
+
+-- Apply stats dari server ke bounce parameters
+statsUpdate.OnClientEvent:Connect(function(data)
+	local stats = data.stats or {}
+	MAX_HEIGHT  = 36 + (stats.jumpHeight or 0) * 4
+	HEIGHT_STEP = 2  + (stats.jumpSpeed  or 0) * 0.3
+end)
 
 -- Delay setelah bounce sebelum backflip di-trigger (biarkan karakter naik dulu)
 local BACKFLIP_TRIGGER_DELAY = 0.3
@@ -42,30 +62,29 @@ local function launchVelocity(h: number): number
 end
 
 -- ─── Item catalog (semua style yang mungkin ada) ─────────────────────────────
-local ITEM_CATALOG = {
-	{
-		id   = "Backflip",
-		name = "Backflip",
-		key  = Enum.KeyCode.One,
-		onTrigger = function() styleRequest:FireServer("Backflip") end,
-	},
-	{
-		id   = "FrontFlip",
-		name = "Front Flip",
-		key  = Enum.KeyCode.Two,
-		onTrigger = function() styleRequest:FireServer("FrontFlip") end,
-	},
-	{
-		id   = "SideFlip",
-		name = "Side Flip",
-		key  = Enum.KeyCode.Three,
-		onTrigger = function() styleRequest:FireServer("SideFlip") end,
-	},
+local ITEM_CATALOG: { { id: string, name: string } } = {
+	{ id = "Backflip",  name = "Backflip"   },
+	{ id = "FrontFlip", name = "Front Flip" },
+	{ id = "SideFlip",  name = "Side Flip"  },
+	{ id = "StarJump",  name = "Star Jump"  },
+	{ id = "CanonBall", name = "Canon Ball" },
+	{ id = "Spin360",   name = "360 Spin"   },
+	{ id = "Double360",   name = "Double 360"       },
+	{ id = "Backflip360",  name = "Backflip 360 Spin" },
+	{ id = "FlatBackflip",  name = "Flat Backflip"  },
+	{ id = "FlatFrontflip", name = "Flat Frontflip" },
+	{ id = "Superman",       name = "Superman"        },
+	{ id = "DoubleBackflip",  name = "Double Backflip"  },
+	{ id = "DoubleFrontflip", name = "Double Frontflip" },
+	{ id = "LazyBoy",         name = "Lazy Boy"         },
 }
 
--- ITEMS yang aktif = hanya yang sudah dibeli, diupdate oleh stylesUpdate event
-local ITEMS: { any } = {}
+local SLOT_KEYS = { Enum.KeyCode.One, Enum.KeyCode.Two, Enum.KeyCode.Three, Enum.KeyCode.Four }
+
+-- ITEMS aktif = styles yang di-equip (max 4), diupdate oleh EquipChanged event dari StyleShop
+local ITEMS: { any }                = {}
 local ownedStyles: { [string]: true } = {}
+local equippedIds: { string }       = {}  -- ordered list dari equipped style IDs
 
 -- ─── Hotbar UI ───────────────────────────────────────────────────────────────
 local screenGui = Instance.new("ScreenGui")
@@ -106,20 +125,28 @@ local function updateSlotVisuals()
 end
 
 local function rebuildHotbar()
-	-- Hapus slot lama
 	for _, slot in slots do slot:Destroy() end
 	slots = {}
 	selectedIndex = 0
-
-	-- Rebuild hanya dari styles yang sudah dibeli
 	ITEMS = {}
-	for _, catalog in ITEM_CATALOG do
-		if ownedStyles[catalog.id] then
-			table.insert(ITEMS, catalog)
-		end
-	end
 
-	for i, item in ITEMS do
+	-- Build dari equippedIds (ordered, max 4), key dinamis sesuai slot
+	for i, styleId in equippedIds do
+		local catalog = nil
+		for _, c in ITEM_CATALOG do
+			if c.id == styleId then catalog = c break end
+		end
+		if not catalog then continue end
+
+		local slotKey = SLOT_KEYS[i]
+		local item = {
+			id        = catalog.id,
+			name      = catalog.name,
+			key       = slotKey,
+			onTrigger = function() styleRequest:FireServer(catalog.id) end,
+		}
+		table.insert(ITEMS, item)
+
 		local slot = Instance.new("Frame")
 		slot.Name = "Slot" .. i
 		slot.Size = UDim2.new(0, 90, 0, 68)
@@ -174,10 +201,19 @@ local function rebuildHotbar()
 	end
 end
 
--- Update hotbar saat dapat styles dari server
+-- stylesUpdate hanya update ownedStyles, hotbar dikontrol oleh EquipChanged
 stylesUpdate.OnClientEvent:Connect(function(owned: { [string]: true })
 	ownedStyles = owned
-	rebuildHotbar()
+end)
+
+-- EquipChanged dari StyleShop → rebuild hotbar
+task.spawn(function()
+	local ev = playerGui:WaitForChild("EquipChanged", 10) :: BindableEvent?
+	if not ev then return end
+	ev.Event:Connect(function(newEquipped: { string })
+		equippedIds = newEquipped
+		rebuildHotbar()
+	end)
 end)
 
 UserInputService.InputBegan:Connect(function(input, processed)
@@ -291,6 +327,7 @@ styleApproved.OnClientEvent:Connect(function(styleId: string)
 	anim.AnimationId = animId
 
 	local track = humanoid:LoadAnimation(anim)
+	track.Priority = Enum.AnimationPriority.Action4  -- override semua animasi default (fall, idle, dll)
 	track:Play()
 
 	track.Stopped:Connect(function()
