@@ -31,7 +31,13 @@ local STYLE_CATALOG = {
 	{ id = "Superman",       name = "Superman",        price = 5000, minStyles = 5, reward = 60 },
 	{ id = "DoubleBackflip",  name = "Double Backflip",  price = 5500, minStyles = 5, reward = 65 },
 	{ id = "DoubleFrontflip", name = "Double Frontflip", price = 6000, minStyles = 5,  reward = 70 },
-	{ id = "LazyBoy",         name = "Lazy Boy",         price = 6500, minStyles = 10, reward = 75 },  -- Adult zone
+	{ id = "LazyBoy", name = "Lazy Boy", price = 6500, minStyles = 10, reward = 75 },
+	{ id = "LazyGuy",     name = "Lazy Guy",     price = 7000, minStyles = 10, reward = 80 },
+	{ id = "SpinningBump", name = "Spinning Bump", price = 7500, minStyles = 10, reward = 85 },
+	{ id = "AtomicDrop", name = "Atomic Drop", price = 8000, minStyles = 10, reward = 90 },
+	{ id = "HeadSpin",   name = "Head Spin",   price = 8500, minStyles = 10, reward = 95  },
+	{ id = "BodyDismiss", name = "Body Dismiss", price = 9000, minStyles = 10, reward = 100 },
+	{ id = "TheWheel",    name = "The Wheel",    price = 9500, minStyles = 10, reward = 105 },
 }
 
 local STAT_CONFIG = {
@@ -214,16 +220,69 @@ local function clearContent()
 end
 
 -- ── Shop tab ──────────────────────────────────────────────────────────────────
+local SHOP_SECTIONS = {
+	{ label = "🧒  Kids Zone",     minStyles = 0,  color = Color3.fromRGB(80,180,255)  },
+	{ label = "🧑  Teenager Zone", minStyles = 5,  color = Color3.fromRGB(180,100,255) },
+	{ label = "🏆  Adult Zone",    minStyles = 10, color = Color3.fromRGB(255,140,60)  },
+}
+
+local function makeSectionHeader(text: string, color: Color3, order: number)
+	local header = Instance.new("Frame")
+	header.Size = UDim2.new(1,0,0,30)
+	header.BackgroundColor3 = Color3.fromRGB(18,18,26)
+	header.BackgroundTransparency = 0
+	header.BorderSizePixel = 0
+	header.LayoutOrder = order
+	header.Parent = contentFrame
+	corner(header, 8)
+
+	local accent = Instance.new("Frame")
+	accent.Size = UDim2.new(0,4,1,-8)
+	accent.Position = UDim2.new(0,0,0,4)
+	accent.BackgroundColor3 = color
+	accent.BorderSizePixel = 0
+	accent.Parent = header
+	corner(accent, 2)
+
+	local lbl = Instance.new("TextLabel")
+	lbl.Size = UDim2.new(1,-14,1,0)
+	lbl.Position = UDim2.new(0,10,0,0)
+	lbl.BackgroundTransparency = 1
+	lbl.Text = text
+	lbl.TextSize = 13
+	lbl.Font = Enum.Font.GothamBold
+	lbl.TextColor3 = color
+	lbl.TextXAlignment = Enum.TextXAlignment.Left
+	lbl.Parent = header
+end
+
 local function buildShopTab()
 	clearContent()
 	titleLabel.Text = "🛍  Style Shop"
-	for i, style in STYLE_CATALOG do
+
+	local order = 0
+	local lastSection = -1
+
+	for _, style in STYLE_CATALOG do
+		-- Cek apakah perlu section header baru
+		local sectionIdx = 1
+		for si, sec in SHOP_SECTIONS do
+			if style.minStyles >= sec.minStyles then sectionIdx = si end
+		end
+		if sectionIdx ~= lastSection then
+			lastSection = sectionIdx
+			local sec = SHOP_SECTIONS[sectionIdx]
+			order += 1
+			makeSectionHeader(sec.label, sec.color, order * 10 - 1)
+		end
+
+		order += 1
 		local card = Instance.new("Frame")
 		card.Size = UDim2.new(1,0,0,68)
 		card.BackgroundColor3 = Color3.fromRGB(24,24,32)
 		card.BackgroundTransparency = 0
 		card.BorderSizePixel = 0
-		card.LayoutOrder = i
+		card.LayoutOrder = order * 10
 		card.Parent = contentFrame
 		corner(card, 10)
 
@@ -253,6 +312,7 @@ local function buildShopTab()
 			end
 		end)
 	end
+
 	-- refresh visuals
 	for _, style in STYLE_CATALOG do
 		local btn = shopCards[style.id]

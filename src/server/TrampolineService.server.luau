@@ -39,15 +39,21 @@ local STYLES = {
 	{ id = "Superman",       name = "Superman",        price = 5000, minStyles = 5 },
 	{ id = "DoubleBackflip",  name = "Double Backflip",  price = 5500, minStyles = 5 },
 	{ id = "DoubleFrontflip", name = "Double Frontflip", price = 6000, minStyles = 5  },
-	{ id = "LazyBoy",         name = "Lazy Boy",         price = 6500, minStyles = 10 },  -- Adult zone
+	{ id = "LazyBoy",  name = "Lazy Boy",  price = 6500, minStyles = 10 },
+	{ id = "LazyGuy",     name = "Lazy Guy",     price = 7000, minStyles = 10 },
+	{ id = "SpinningBump", name = "Spinning Bump", price = 7500, minStyles = 10 },
+	{ id = "AtomicDrop", name = "Atomic Drop", price = 8000, minStyles = 10 },
+	{ id = "HeadSpin",    name = "Head Spin",    price = 8500, minStyles = 10 },
+	{ id = "BodyDismiss", name = "Body Dismiss", price = 9000,  minStyles = 10 },
+	{ id = "TheWheel",    name = "The Wheel",    price = 9500,  minStyles = 10 },
 }
 
 local STYLE_REWARDS: { [string]: number } = {
-	Backflip  = 10, FrontFlip = 15, SideFlip = 20, StarJump = 25, CanonBall = 30, Spin360 = 35, Double360 = 40, Backflip360 = 45, FlatBackflip = 50, FlatFrontflip = 55, Superman = 60, DoubleBackflip = 65, DoubleFrontflip = 70, LazyBoy = 75,
+	Backflip  = 10, FrontFlip = 15, SideFlip = 20, StarJump = 25, CanonBall = 30, Spin360 = 35, Double360 = 40, Backflip360 = 45, FlatBackflip = 50, FlatFrontflip = 55, Superman = 60, DoubleBackflip = 65, DoubleFrontflip = 70, LazyBoy = 75, LazyGuy = 80, SpinningBump = 85, AtomicDrop = 90, HeadSpin = 95, BodyDismiss = 100, TheWheel = 105,
 }
 
 local STYLE_XP: { [string]: number } = {
-	Backflip  = 10, FrontFlip = 15, SideFlip = 20, StarJump = 25, CanonBall = 30, Spin360 = 35, Double360 = 40, Backflip360 = 45, FlatBackflip = 50, FlatFrontflip = 55, Superman = 60, DoubleBackflip = 65, DoubleFrontflip = 70, LazyBoy = 75,
+	Backflip  = 10, FrontFlip = 15, SideFlip = 20, StarJump = 25, CanonBall = 30, Spin360 = 35, Double360 = 40, Backflip360 = 45, FlatBackflip = 50, FlatFrontflip = 55, Superman = 60, DoubleBackflip = 65, DoubleFrontflip = 70, LazyBoy = 75, LazyGuy = 80, SpinningBump = 85, AtomicDrop = 90, HeadSpin = 95, BodyDismiss = 100, TheWheel = 105,
 }
 
 -- ─── Gate requirements ────────────────────────────────────────────────────────

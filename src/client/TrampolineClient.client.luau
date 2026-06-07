@@ -30,7 +30,13 @@ local STYLE_ANIM_IDS = {
 	Superman       = "rbxassetid://98253651217655",
 	DoubleBackflip  = "rbxassetid://105678898467513",
 	DoubleFrontflip = "rbxassetid://91583020089351",
-	LazyBoy         = "rbxassetid://84682000343737",
+	LazyBoy  = "rbxassetid://84682000343737",
+	LazyGuy      = "rbxassetid://94142891789027",
+	SpinningBump = "rbxassetid://87857869106584",
+	AtomicDrop = "rbxassetid://73358166751212",
+	HeadSpin    = "rbxassetid://95557628143728",
+	BodyDismiss = "rbxassetid://86596700228945",
+	TheWheel    = "rbxassetid://82242552193665",
 }
 
 -- ─── Bounce parameters (base values, diupdate oleh stats) ────────────────────
@@ -76,7 +82,13 @@ local ITEM_CATALOG: { { id: string, name: string } } = {
 	{ id = "Superman",       name = "Superman"        },
 	{ id = "DoubleBackflip",  name = "Double Backflip"  },
 	{ id = "DoubleFrontflip", name = "Double Frontflip" },
-	{ id = "LazyBoy",         name = "Lazy Boy"         },
+	{ id = "LazyBoy", name = "Lazy Boy" },
+	{ id = "LazyGuy",     name = "Lazy Guy"     },
+	{ id = "SpinningBump", name = "Spinning Bump" },
+	{ id = "AtomicDrop", name = "Atomic Drop" },
+	{ id = "HeadSpin",   name = "Head Spin"    },
+	{ id = "BodyDismiss", name = "Body Dismiss" },
+	{ id = "TheWheel",    name = "The Wheel"    },
 }
 
 local SLOT_KEYS = { Enum.KeyCode.One, Enum.KeyCode.Two, Enum.KeyCode.Three, Enum.KeyCode.Four }
