@@ -1,5 +1,6 @@
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage     = game:GetService("ServerStorage")
 
 -- ─── RemoteEvents ─────────────────────────────────────────────────────────────
 local remotes = Instance.new("Folder")
@@ -115,6 +116,16 @@ local function addCurrency(player: Player, amount: number)
 	playerCurrency[uid] = (playerCurrency[uid] or 0) + amount
 	currencyUpdate:FireClient(player, playerCurrency[uid])
 end
+
+-- ─── Cross-script currency awards (e.g. minigame wins) ───────────────────────
+local awardCurrency = Instance.new("BindableEvent")
+awardCurrency.Name   = "AwardCurrency"
+awardCurrency.Parent = ServerStorage
+
+awardCurrency.Event:Connect(function(player: Player, amount: number)
+	if not (playerCurrency[player.UserId]) then return end
+	addCurrency(player, amount)
+end)
 
 local function addXP(player: Player, amount: number)
 	local uid = player.UserId

@@ -28,10 +28,21 @@ local MAX_HP         = 3
 local HIT_RANGE      = 13
 local HIT_COOLDOWN   = 0.7
 local DODGE_DURATION = 0.65
-local DODGE_COOLDOWN = 2.5
+local DODGE_COOLDOWN = 1
 local KNOCKBACK      = 55
 local FALL_THRESHOLD = 12
 local BOT_WAIT_TIME  = 5   -- seconds alone in queue before bot fills in
+local BOT_WIN_REWARD    = 100
+local PLAYER_WIN_REWARD = 250
+
+-- Bot AI tuning
+local BOT_MOVE_SPEED      = 10   -- studs/sec while approaching
+local BOT_MIN_DISTANCE    = 4    -- stops closing the gap once this near (avoids overlap)
+local BOT_ATTACK_COOLDOWN = 1.1
+local BOT_HIT_ANIM        = "rbxassetid://135446390129712"
+local BOT_WALK_ANIM       = "rbxassetid://913402848" -- default R15 walk
+
+local awardCurrency = ServerStorage:WaitForChild("AwardCurrency") :: BindableEvent
 
 -- ─── State ────────────────────────────────────────────────────────────────────
 type GameData = {
@@ -47,20 +58,28 @@ type BotGame = {
 	myHp:        number,
 	botHp:       number,
 	botPos:      Vector3,
+	botRig:      Model?,
 	spawnCFrame: CFrame,
 	hitCd:       number,
 	dodgeCd:     number,
+	isDodging:   boolean,
+	botAttackCd: number,
+	botHitTrack: AnimationTrack?,
+	botWalkTrack: AnimationTrack?,
 }
 
-local queue:      { Player }              = {}
+local queues:     { [number]: { Player } } = { [1] = {}, [2] = {}, [3] = {} }
+local playerBridge: { [Player]: number }  = {}  -- which bridge a queued/waiting player picked
 local games:      { [Player]: GameData }  = {}
 local botGames:   { [Player]: BotGame }   = {}
 local botTimers:  { [Player]: thread }    = {}  -- pending bot countdown per player
 
 -- ─── Helpers ──────────────────────────────────────────────────────────────────
-local function getSpawns(): (CFrame, CFrame)
-	local s1 = workspace:FindFirstChild("PFspawn1", true) :: BasePart?
-	local s2 = workspace:FindFirstChild("PFspawn2", true) :: BasePart?
+local function getSpawns(bridge: number): (CFrame, CFrame)
+	local n1 = "PFspawn" .. tostring(bridge * 2 - 1)
+	local n2 = "PFspawn" .. tostring(bridge * 2)
+	local s1 = workspace:FindFirstChild(n1, true) :: BasePart?
+	local s2 = workspace:FindFirstChild(n2, true) :: BasePart?
 	if s1 and s2 then
 		local p1 = s1.Position + Vector3.new(0, 3, 0)
 		local p2 = s2.Position + Vector3.new(0, 3, 0)
@@ -71,9 +90,15 @@ local function getSpawns(): (CFrame, CFrame)
 end
 
 local function removeFromQueue(player: Player)
-	for i, p in queue do
-		if p == player then table.remove(queue, i) return end
+	local bridge = playerBridge[player]
+	if not bridge then return end
+	local q = queues[bridge]
+	if q then
+		for i, p in q do
+			if p == player then table.remove(q, i) break end
+		end
 	end
+	playerBridge[player] = nil
 end
 
 local function cancelBotTimer(player: Player)
@@ -125,20 +150,150 @@ local function removePillow(player: Player)
 	end
 end
 
+-- ─── Bot rig ──────────────────────────────────────────────────────────────────
+-- Live player characters can have Archivable = false (common on official
+-- avatar bundles/items), which makes Clone() silently return nil. Instead we
+-- clone the "Rig" template used for authoring animations — same proportions
+-- as the player's character (so the Pillow grip and hit/block animations look
+-- correct), and guaranteed to be archivable since it's editable in Studio.
+-- RBX_ANIMSAVES (under ServerStorage) holds internal animation-save data —
+-- folders that mimic a rig's joint hierarchy but contain no real geometry.
+-- A genuine animation-reference rig has a Humanoid AND actual visible
+-- BaseParts (non-zero size). Use that to tell them apart.
+local function isVisibleRig(model: Instance): boolean
+	if not model:IsA("Model") then return false end
+	if not model:FindFirstChildOfClass("Humanoid") then return false end
+	for _, part in model:GetDescendants() do
+		if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" and part.Size.Magnitude > 0 then
+			return true
+		end
+	end
+	return false
+end
+
+local RIG_TEMPLATE_NAMES = { "PFRIG", "Rig" }
+
+local function findRigTemplate(): Model?
+	for _, name in RIG_TEMPLATE_NAMES do
+		local inWorkspace = workspace:FindFirstChild(name)
+		if inWorkspace and isVisibleRig(inWorkspace) then
+			return inWorkspace :: Model
+		end
+		local inStorage = ServerStorage:FindFirstChild(name)
+		if inStorage and isVisibleRig(inStorage) then
+			return inStorage :: Model
+		end
+	end
+	return nil
+end
+
+local function spawnBotRig(cf: CFrame): Model?
+	local sourceRig = findRigTemplate()
+	if not sourceRig then
+		warn("[PFBot] spawnBotRig: no 'Rig' template found in ServerStorage or Workspace")
+		return nil
+	end
+
+	local ok, rig = pcall(function()
+		return sourceRig:Clone()
+	end)
+	if not ok or not rig then
+		warn("[PFBot] spawnBotRig: clone failed —", rig)
+		return nil
+	end
+	print("[PFBot] spawnBotRig: cloned", rig.Name, "at", tostring(cf.Position))
+
+	rig.Name = "PillowFightBot"
+
+	for _, obj in rig:GetChildren() do
+		if obj:IsA("Tool") then obj:Destroy() end
+	end
+
+	-- The Animate script tries to load the rig's default walk/idle/run
+	-- animations, which can fail with a permission error for a
+	-- server-spawned NPC (no player context). The bot doesn't move via
+	-- Humanoid animations anyway (WalkSpeed = 0, controlled via PivotTo),
+	-- so it can be safely removed.
+	local animate = rig:FindFirstChild("Animate")
+	if animate then animate:Destroy() end
+
+	local humanoid = rig:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		humanoid.WalkSpeed  = 0
+		humanoid.JumpPower  = 0
+		humanoid.AutoRotate = false
+		humanoid.DisplayName = "BOT"
+		humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+		humanoid.Health     = humanoid.MaxHealth
+	end
+
+	-- Anchoring individual parts of a jointed rig makes it render as
+	-- invisible/broken client-side, so instead we just disable collision —
+	-- gravity bounce is countered every frame in the Heartbeat loop by
+	-- zeroing the root's velocity right after PivotTo.
+	for _, part in rig:GetDescendants() do
+		if part:IsA("BasePart") then
+			part.CanCollide = false
+			-- The "Rig" template is likely kept hidden (Transparency = 1) as
+			-- an animation-reference dummy; force the clone visible, except
+			-- HumanoidRootPart which is *meant* to stay invisible.
+			if part.Name ~= "HumanoidRootPart" then
+				part.Transparency = 0
+				part.LocalTransparencyModifier = 0
+			end
+		elseif part:IsA("Decal") then
+			part.Transparency = 0
+		end
+	end
+
+	for _, part in rig:GetDescendants() do
+		if part:IsA("BasePart") then
+			print(("[PFBot] part %s (%s) size=%s transparency=%.2f canCollide=%s parent=%s"):format(
+				part.Name, part.ClassName, tostring(part.Size), part.Transparency, tostring(part.CanCollide), tostring(part.Parent)))
+		end
+	end
+
+	-- Neutralize any baked-in PivotOffset (the animation-reference rig
+	-- likely has one, e.g. (0, -3, 0)) so PivotTo places the visible mesh
+	-- exactly at `cf` instead of shifting it underground/off to a side.
+	if rig.PrimaryPart then
+		print(("[PFBot] PrimaryPart=%s PivotOffset=%s"):format(rig.PrimaryPart.Name, tostring(rig.PrimaryPart.PivotOffset)))
+		rig.PrimaryPart.PivotOffset = CFrame.new()
+	end
+
+	rig.Parent = workspace
+	rig:PivotTo(cf)
+	print("[PFBot] after PivotTo, root at", tostring(rig:GetPivot().Position), "humanoidRootPart at", tostring(rig.PrimaryPart and rig.PrimaryPart.Position))
+
+	local template = ServerStorage:FindFirstChild("Pillow")
+	if template and humanoid then
+		local pillow = template:Clone()
+		pillow.Parent = rig
+		humanoid:EquipTool(pillow)
+	end
+
+	return rig
+end
+
+local function destroyBotRig(rig: Model?)
+	if rig then rig:Destroy() end
+end
+
 -- ─── PvP game ─────────────────────────────────────────────────────────────────
 local function endGame(winner: Player, loser: Player, reason: string)
 	games[winner] = nil
 	games[loser]  = nil
 	removePillow(winner)
 	removePillow(loser)
+	awardCurrency:Fire(winner, PLAYER_WIN_REWARD)
 	gameEnd:FireClient(winner, true,  loser.Name,  reason)
 	gameEnd:FireClient(loser,  false, winner.Name, reason)
 	teleportBack(winner)
 	teleportBack(loser)
 end
 
-local function startGame(p1: Player, p2: Player)
-	local cf1, cf2 = getSpawns()
+local function startGame(p1: Player, p2: Player, bridge: number)
+	local cf1, cf2 = getSpawns(bridge)
 
 	local function tp(player: Player, cf: CFrame)
 		local char = player.Character
@@ -161,26 +316,41 @@ end
 
 -- ─── Bot game ─────────────────────────────────────────────────────────────────
 local function endBotGame(player: Player, won: boolean, reason: string)
+	local bData = botGames[player]
 	botGames[player] = nil
 	removePillow(player)
+	if bData then destroyBotRig(bData.botRig) end
+	if won then
+		awardCurrency:Fire(player, BOT_WIN_REWARD)
+	end
 	gameEnd:FireClient(player, won, "BOT", reason)
 	teleportBack(player)
 end
 
-local function startBotGame(player: Player)
-	local cf1, cf2 = getSpawns()
+local function startBotGame(player: Player, bridge: number)
+	local cf1, cf2 = getSpawns(bridge)
 	local char = player.Character
 	if char then
 		local root = char:FindFirstChild("HumanoidRootPart") :: BasePart?
 		if root then root.CFrame = cf1 end
 	end
+
+	local botCFrame = CFrame.lookAt(cf2.Position, cf1.Position)
+	local botRig = spawnBotRig(botCFrame)
+	print("[PFBot] startBotGame: char=", tostring(char), "botRig=", tostring(botRig))
+
 	botGames[player] = {
 		myHp        = MAX_HP,
 		botHp       = MAX_HP,
 		botPos      = cf2.Position,
+		botRig      = botRig,
 		spawnCFrame = cf1,
 		hitCd       = 0,
 		dodgeCd     = 0,
+		isDodging   = false,
+		botAttackCd = 0,
+		botHitTrack = nil,
+		botWalkTrack = nil,
 	}
 	queueUpdate:FireClient(player, "starting", "BOT")
 	task.delay(0.8, function()
@@ -190,40 +360,55 @@ local function startBotGame(player: Player)
 end
 
 -- ─── Matchmaking ──────────────────────────────────────────────────────────────
-local function tryMatch()
-	if #queue < 2 then return end
-	local p1 = table.remove(queue, 1)
-	local p2 = table.remove(queue, 1)
+local function tryMatch(bridge: number)
+	local q = queues[bridge]
+	if #q < 2 then return end
+	local p1 = table.remove(q, 1)
+	local p2 = table.remove(q, 1)
+	playerBridge[p1] = nil
+	playerBridge[p2] = nil
 	cancelBotTimer(p1)
 	cancelBotTimer(p2)
 	queueUpdate:FireClient(p1, "starting", p2.Name)
 	queueUpdate:FireClient(p2, "starting", p1.Name)
-	task.delay(0.8, function() startGame(p1, p2) end)
+	task.delay(0.8, function() startGame(p1, p2, bridge) end)
 end
 
-local function joinQueue(player: Player)
+local function joinQueue(player: Player, bridge: number)
 	if games[player] or botGames[player] then return end
-	for _, p in queue do if p == player then return end end
-	table.insert(queue, player)
-	queueUpdate:FireClient(player, "waiting", #queue)
+	if playerBridge[player] then return end
 
-	if #queue >= 2 then
-		tryMatch()
+	local q = queues[bridge]
+	playerBridge[player] = bridge
+	table.insert(q, player)
+	queueUpdate:FireClient(player, "waiting", #q)
+
+	if #q >= 2 then
+		tryMatch(bridge)
 	else
 		-- Start bot countdown — fires if no second player shows up in time
 		botTimers[player] = task.delay(BOT_WAIT_TIME, function()
 			botTimers[player] = nil
 			removeFromQueue(player)
-			startBotGame(player)
+			startBotGame(player, bridge)
 		end)
 	end
 end
 
 -- ─── Matchmaking triggers ─────────────────────────────────────────────────────
+local function getBridgeNumber(name: string): number
+	local digit = name:match("(%d+)%s*$")
+	local n = digit and tonumber(digit) or 1
+	if n < 1 or n > 3 then n = 1 end
+	return n
+end
+
 local function setupTrigger(part: BasePart)
 	-- Remove any existing prompt first
 	local existing = part:FindFirstChildOfClass("ProximityPrompt")
 	if existing then existing:Destroy() end
+
+	local bridge = getBridgeNumber(part.Name)
 
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.ActionText    = "Join Queue"
@@ -234,7 +419,7 @@ local function setupTrigger(part: BasePart)
 	prompt.Parent        = part
 
 	prompt.Triggered:Connect(function(player: Player)
-		joinQueue(player)
+		joinQueue(player, bridge)
 	end)
 end
 
@@ -323,7 +508,19 @@ end)
 
 -- ─── Pillow dodge ─────────────────────────────────────────────────────────────
 pillowDodge.OnServerEvent:Connect(function(player: Player)
-	local now  = tick()
+	local now = tick()
+
+	local bData = botGames[player]
+	if bData then
+		if now - bData.dodgeCd < DODGE_COOLDOWN then return end
+		bData.dodgeCd   = now
+		bData.isDodging = true
+		task.delay(DODGE_DURATION, function()
+			if botGames[player] then botGames[player].isDodging = false end
+		end)
+		return
+	end
+
 	local data = games[player]
 	if not data then return end
 	if now - data.dodgeCd < DODGE_COOLDOWN then return end
@@ -332,6 +529,104 @@ pillowDodge.OnServerEvent:Connect(function(player: Player)
 	task.delay(DODGE_DURATION, function()
 		if games[player] then games[player].isDodging = false end
 	end)
+end)
+
+-- ─── Bot AI: approach + attack ────────────────────────────────────────────────
+RunService.Heartbeat:Connect(function(dt: number)
+	for player, bData in botGames do
+		local rig = bData.botRig
+		if not rig then continue end
+		local botRoot = rig:FindFirstChild("HumanoidRootPart") :: BasePart?
+		local char    = player.Character
+		local pRoot   = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if not botRoot or not pRoot then continue end
+
+		local toPlayer       = pRoot.Position - botRoot.Position
+		local horizontalDist = Vector3.new(toPlayer.X, 0, toPlayer.Z).Magnitude
+		local facing         = CFrame.lookAt(botRoot.Position, Vector3.new(pRoot.Position.X, botRoot.Position.Y, pRoot.Position.Z))
+
+		-- Always close the gap (without overlapping the player)
+		local targetPos = botRoot.Position
+		local isMoving  = false
+		if horizontalDist > BOT_MIN_DISTANCE then
+			isMoving = true
+			local dir      = Vector3.new(toPlayer.X, 0, toPlayer.Z).Unit
+			local moveDist = math.min(BOT_MOVE_SPEED * dt, horizontalDist - BOT_MIN_DISTANCE)
+			targetPos = botRoot.Position + dir * moveDist
+		end
+		rig:PivotTo(CFrame.new(targetPos) * (facing - facing.Position))
+		botRoot.AssemblyLinearVelocity = Vector3.zero
+		botRoot.AssemblyAngularVelocity = Vector3.zero
+
+		-- Play/stop the walk animation in sync with actual movement
+		local humanoidForWalk = rig:FindFirstChildOfClass("Humanoid")
+		if humanoidForWalk then
+			local walkTrack = bData.botWalkTrack
+			if not walkTrack then
+				local anim = Instance.new("Animation")
+				anim.AnimationId = BOT_WALK_ANIM
+				local ok, loaded = pcall(function() return humanoidForWalk:LoadAnimation(anim) end)
+				if ok and loaded then
+					walkTrack = loaded
+					walkTrack.Looped = true
+					bData.botWalkTrack = walkTrack
+				end
+			end
+			if walkTrack then
+				if isMoving and not walkTrack.IsPlaying then
+					walkTrack:Play()
+				elseif not isMoving and walkTrack.IsPlaying then
+					walkTrack:Stop()
+				end
+			end
+		end
+
+		-- Attack independently of movement, any time the player is within hit range
+		if math.floor(tick() * 2) % 10 == 0 then
+			print(("[PFBot] dist=%.1f range=%d rig=%s humanoid=%s"):format(
+				horizontalDist, HIT_RANGE, tostring(rig and rig.Name),
+				tostring(rig and rig:FindFirstChildOfClass("Humanoid") ~= nil)))
+		end
+		if horizontalDist <= HIT_RANGE then
+			local now = tick()
+			if now - bData.botAttackCd >= BOT_ATTACK_COOLDOWN then
+				print("[PFBot] ATTACKING — dodging:", bData.isDodging)
+				bData.botAttackCd = now
+
+				local humanoid = rig:FindFirstChildOfClass("Humanoid")
+				if humanoid then
+					local track = bData.botHitTrack
+					if not track then
+						local anim = Instance.new("Animation")
+						anim.AnimationId = BOT_HIT_ANIM
+						local ok, loaded = pcall(function() return humanoid:LoadAnimation(anim) end)
+						if ok and loaded then
+							track = loaded
+							bData.botHitTrack = track
+						end
+					end
+					if track then
+						track:Stop()
+						track:Play()
+					end
+				end
+
+				if bData.isDodging then
+					hitResult:FireClient(player, "dodged", bData.myHp, bData.botHp)
+				else
+					bData.myHp -= 1
+					local pushDir = (pRoot.Position - botRoot.Position).Unit
+					pRoot.AssemblyLinearVelocity = Vector3.new(pushDir.X * KNOCKBACK, 22, pushDir.Z * KNOCKBACK)
+					hitResult:FireClient(player, "taken", bData.myHp, bData.botHp)
+					if bData.myHp <= 0 then
+						endBotGame(player, false, "knockout")
+					end
+				end
+			end
+		end
+
+		bData.botPos = botRoot.Position
+	end
 end)
 
 -- ─── Fall detection ───────────────────────────────────────────────────────────
@@ -362,6 +657,8 @@ end)
 Players.PlayerRemoving:Connect(function(player: Player)
 	cancelBotTimer(player)
 	removeFromQueue(player)
+	local bData = botGames[player]
+	if bData then destroyBotRig(bData.botRig) end
 	botGames[player] = nil
 
 	local data = games[player]

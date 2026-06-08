@@ -18,11 +18,11 @@ local gameEnd     = remotes:WaitForChild("GameEnd")
 local leaveQueue  = remotes:WaitForChild("LeaveQueue")
 
 local HIT_CD   = 0.75
-local DODGE_CD = 2.5
+local DODGE_CD = 1
 
 -- ─── Animation IDs — replace with your own from Animation Editor or catalog ──
 local ANIM_HIT   = "rbxassetid://135446390129712"        -- pillow swing hit 5
-local ANIM_BLOCK = "rbxassetid://REPLACE_BLOCK_ANIM_ID" -- raise pillow to block/dodge
+local ANIM_BLOCK = "rbxassetid://121901601331001" -- raise pillow to block/dodge (test 2)
 
 local hitTrack:   AnimationTrack? = nil
 local blockTrack: AnimationTrack? = nil
@@ -217,7 +217,7 @@ hintBar.Position              = UDim2.new(0.5, 0, 1, -18)
 hintBar.BackgroundColor3      = Color3.fromRGB(10, 10, 22)
 hintBar.BackgroundTransparency = 0.25
 hintBar.BorderSizePixel       = 0
-hintBar.Text                  = "[E] Hit    [Q] Dodge    [W] Forward  [S] Back"
+hintBar.Text                  = "[E] Hit    [Q] Block    [W] Forward  [S] Back"
 hintBar.TextColor3            = Color3.fromRGB(190, 190, 190)
 hintBar.Font                  = Enum.Font.Gotham
 hintBar.TextSize              = 14
@@ -298,6 +298,23 @@ queueUpdate.OnClientEvent:Connect(function(status: string, extra: any)
 end)
 
 gameStart.OnClientEvent:Connect(function(oppName: string, hp: number)
+	-- Snap the camera behind the character immediately so it doesn't
+	-- briefly show the character's front right after the teleport
+	do
+		local camera = workspace.CurrentCamera
+		local char   = player.Character
+		local root   = char and char:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if camera and root then
+			local rootCFrame = root.CFrame
+			local behind = rootCFrame.Position - rootCFrame.LookVector * 10 + Vector3.new(0, 4, 0)
+			camera.CameraType = Enum.CameraType.Scriptable
+			camera.CFrame = CFrame.lookAt(behind, rootCFrame.Position)
+			task.defer(function()
+				camera.CameraType = Enum.CameraType.Custom
+			end)
+		end
+	end
+
 	inGame   = true
 	myHp     = hp
 	oppHp    = hp
@@ -339,7 +356,7 @@ hitResult.OnClientEvent:Connect(function(outcome: string, newMyHp: number, newOp
 	elseif outcome == "taken" then
 		flashPanel(myPanel, Color3.fromRGB(180, 35, 35))
 	elseif outcome == "dodged" then
-		dodgeLabel.Text      = "DODGED!"
+		dodgeLabel.Text      = "BLOCKED!"
 		dodgeLabel.TextColor3 = Color3.fromRGB(100, 220, 255)
 		task.delay(0.8, function() dodgeLabel.Text = "" end)
 	end
@@ -378,14 +395,14 @@ UserInputService.InputBegan:Connect(function(input: InputObject, processed: bool
 		if now - dodgeCd < DODGE_CD then return end
 		dodgeCd = now
 		pillowDodge:FireServer()
-		dodgeLabel.Text       = "DODGING!"
+		dodgeLabel.Text       = "BLOCKING!"
 		dodgeLabel.TextColor3 = Color3.fromRGB(180, 120, 255)
 		if blockTrack then
 			blockTrack:Stop()
 			blockTrack:Play()
 		end
 		task.delay(0.65, function()
-			if dodgeLabel.Text == "DODGING!" then dodgeLabel.Text = "" end
+			if dodgeLabel.Text == "BLOCKING!" then dodgeLabel.Text = "" end
 		end)
 	end
 end)
@@ -396,10 +413,10 @@ RunService.Heartbeat:Connect(function()
 
 	local remaining = DODGE_CD - (tick() - dodgeCd)
 	if remaining > 0.1 then
-		dodgeLabel.Text       = string.format("Dodge: %.1fs", remaining)
+		dodgeLabel.Text       = string.format("Block: %.1fs", remaining)
 		dodgeLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
-	elseif dodgeLabel.Text ~= "DODGING!" then
-		dodgeLabel.Text       = "[Q] Dodge  READY"
+	elseif dodgeLabel.Text ~= "BLOCKING!" then
+		dodgeLabel.Text       = "[Q] Block  READY"
 		dodgeLabel.TextColor3 = Color3.fromRGB(180, 120, 255)
 	end
 end)
