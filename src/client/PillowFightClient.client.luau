@@ -78,12 +78,13 @@ local function unlockControls()
 	RunService:UnbindFromRenderStep("PFMove")
 end
 
-local inGame   = false
-local myHp     = 3
-local oppHp    = 3
-local maxHp    = 3
-local hitCd    = 0
-local dodgeCd  = 0
+local inGame    = false
+local myHp      = 3
+local oppHp     = 3
+local myMaxHp   = 3
+local oppMaxHp  = 3
+local hitCd     = 0
+local dodgeCd   = 0
 
 -- ─── Root GUI ────────────────────────────────────────────────────────────────
 local screenGui = Instance.new("ScreenGui")
@@ -152,62 +153,75 @@ hud.BackgroundTransparency = 1
 hud.Visible              = false
 hud.Parent               = screenGui
 
--- HP panel builder
-local myHearts:  { TextLabel } = {}
-local oppHearts: { TextLabel } = {}
+-- HP panel builder — returns (panel, barFill, hpLabel)
+type HpBar = { fill: Frame, label: TextLabel }
+local myBar:  HpBar = {} :: HpBar
+local oppBar: HpBar = {} :: HpBar
 
-local function makeHpPanel(side: string, hearts: { TextLabel }): Frame
+local function makeHpPanel(side: string, bar: HpBar): Frame
+	local isLeft = side == "left"
+	local barColor = isLeft and Color3.fromRGB(80, 210, 120) or Color3.fromRGB(220, 80, 80)
+
 	local panel = Instance.new("Frame")
-	panel.Size                  = UDim2.new(0, 170, 0, 54)
-	panel.AnchorPoint           = side == "left" and Vector2.new(0, 0) or Vector2.new(1, 0)
-	panel.Position              = side == "left" and UDim2.new(0, 14, 0, 14) or UDim2.new(1, -14, 0, 14)
+	panel.Size                  = UDim2.new(0, 190, 0, 60)
+	panel.AnchorPoint           = isLeft and Vector2.new(0, 0) or Vector2.new(1, 0)
+	panel.Position              = isLeft and UDim2.new(0, 14, 0, 14) or UDim2.new(1, -14, 0, 14)
 	panel.BackgroundColor3      = Color3.fromRGB(10, 10, 22)
 	panel.BackgroundTransparency = 0.2
 	panel.BorderSizePixel       = 0
 	panel.Parent                = hud
 	local pc = Instance.new("UICorner", panel); pc.CornerRadius = UDim.new(0, 10)
 	local ps = Instance.new("UIStroke", panel)
-	ps.Color     = side == "left" and Color3.fromRGB(80, 210, 120) or Color3.fromRGB(220, 80, 80)
+	ps.Color     = barColor
 	ps.Thickness = 1.5
 
 	local nameLabel = Instance.new("TextLabel")
 	nameLabel.Name                = "NameLabel"
-	nameLabel.Size                = UDim2.new(1, 0, 0, 22)
-	nameLabel.Position            = UDim2.new(0, 0, 0, 4)
+	nameLabel.Size                = UDim2.new(1, -12, 0, 20)
+	nameLabel.Position            = UDim2.new(0, 8, 0, 5)
 	nameLabel.BackgroundTransparency = 1
-	nameLabel.Text                = side == "left" and "YOU" or "OPPONENT"
+	nameLabel.Text                = isLeft and "YOU" or "OPPONENT"
 	nameLabel.TextColor3          = Color3.fromRGB(255, 255, 255)
 	nameLabel.Font                = Enum.Font.GothamBold
 	nameLabel.TextSize            = 13
+	nameLabel.TextXAlignment      = Enum.TextXAlignment.Left
 	nameLabel.Parent              = panel
 
-	local heartRow = Instance.new("Frame")
-	heartRow.Size               = UDim2.new(1, -14, 0, 24)
-	heartRow.Position           = UDim2.new(0, 7, 0, 26)
-	heartRow.BackgroundTransparency = 1
-	heartRow.Parent             = panel
-	local hl = Instance.new("UIListLayout", heartRow)
-	hl.FillDirection      = Enum.FillDirection.Horizontal
-	hl.Padding            = UDim.new(0, 5)
-	hl.VerticalAlignment  = Enum.VerticalAlignment.Center
+	-- HP numeric label (top-right of panel)
+	local hpLabel = Instance.new("TextLabel")
+	hpLabel.Size                = UDim2.new(0, 60, 0, 20)
+	hpLabel.Position            = UDim2.new(1, -68, 0, 5)
+	hpLabel.BackgroundTransparency = 1
+	hpLabel.Text                = "3 / 3"
+	hpLabel.TextColor3          = Color3.fromRGB(220, 220, 220)
+	hpLabel.Font                = Enum.Font.GothamBold
+	hpLabel.TextSize            = 12
+	hpLabel.TextXAlignment      = Enum.TextXAlignment.Right
+	hpLabel.Parent              = panel
+	bar.label = hpLabel
 
-	for _ = 1, 3 do
-		local h = Instance.new("TextLabel")
-		h.Size                = UDim2.new(0, 22, 0, 22)
-		h.BackgroundTransparency = 1
-		h.Text                = "♥"
-		h.TextColor3          = Color3.fromRGB(255, 55, 75)
-		h.Font                = Enum.Font.GothamBold
-		h.TextSize            = 20
-		h.Parent              = heartRow
-		table.insert(hearts, h)
-	end
+	-- Bar track
+	local barBg = Instance.new("Frame")
+	barBg.Size              = UDim2.new(1, -16, 0, 14)
+	barBg.Position          = UDim2.new(0, 8, 0, 34)
+	barBg.BackgroundColor3  = Color3.fromRGB(35, 35, 50)
+	barBg.BorderSizePixel   = 0
+	barBg.Parent            = panel
+	local bbc = Instance.new("UICorner", barBg); bbc.CornerRadius = UDim.new(0, 6)
+
+	local fill = Instance.new("Frame")
+	fill.Size             = UDim2.new(1, 0, 1, 0)
+	fill.BackgroundColor3 = barColor
+	fill.BorderSizePixel  = 0
+	fill.Parent           = barBg
+	local fc = Instance.new("UICorner", fill); fc.CornerRadius = UDim.new(0, 6)
+	bar.fill = fill
 
 	return panel
 end
 
-local myPanel  = makeHpPanel("left",  myHearts)
-local oppPanel = makeHpPanel("right", oppHearts)
+local myPanel  = makeHpPanel("left",  myBar)
+local oppPanel = makeHpPanel("right", oppBar)
 
 -- Controls hint bar
 local hintBar = Instance.new("TextLabel")
@@ -269,11 +283,17 @@ resultSub.Text                = ""
 resultSub.Parent              = resultPanel
 
 -- ─── HP update ───────────────────────────────────────────────────────────────
-local function updateHearts(hearts: { TextLabel }, hp: number)
-	for i, h in hearts do
-		h.TextColor3 = i <= hp
-			and Color3.fromRGB(255, 55, 75)
-			or  Color3.fromRGB(55, 55, 55)
+local function updateBar(bar: HpBar, hp: number, maxHp: number, isPlayer: boolean?)
+	local pct = math.clamp(hp / math.max(maxHp, 1), 0, 1)
+	TweenService:Create(bar.fill, TweenInfo.new(0.15, Enum.EasingStyle.Quad),
+		{ Size = UDim2.new(pct, 0, 1, 0) }):Play()
+	bar.label.Text = hp .. " / " .. maxHp
+	if isPlayer then
+		-- Player bar: green when healthy, red when low
+		local color = pct > 0.3
+			and Color3.fromRGB(80, 210, 120)
+			or  Color3.fromRGB(220, 55, 55)
+		TweenService:Create(bar.fill, TweenInfo.new(0.15), { BackgroundColor3 = color }):Play()
 	end
 end
 
@@ -297,7 +317,7 @@ queueUpdate.OnClientEvent:Connect(function(status: string, extra: any)
 	end
 end)
 
-gameStart.OnClientEvent:Connect(function(oppName: string, hp: number)
+gameStart.OnClientEvent:Connect(function(oppName: string, myMaxHpVal: number, oppMaxHpVal: number)
 	-- Snap the camera behind the character immediately so it doesn't
 	-- briefly show the character's front right after the teleport
 	do
@@ -315,18 +335,19 @@ gameStart.OnClientEvent:Connect(function(oppName: string, hp: number)
 		end
 	end
 
-	inGame   = true
-	myHp     = hp
-	oppHp    = hp
-	maxHp    = hp
-	hitCd    = 0
-	dodgeCd  = 0
+	inGame     = true
+	myMaxHp    = myMaxHpVal  or 3
+	oppMaxHp   = oppMaxHpVal or 3
+	myHp       = myMaxHp
+	oppHp      = oppMaxHp
+	hitCd      = 0
+	dodgeCd    = 0
 
 	local oppNameLabel = oppPanel:FindFirstChild("NameLabel") :: TextLabel?
 	if oppNameLabel then oppNameLabel.Text = oppName end
 
-	updateHearts(myHearts, myHp)
-	updateHearts(oppHearts, oppHp)
+	updateBar(myBar,  myHp,  myMaxHp,  true)
+	updateBar(oppBar, oppHp, oppMaxHp, false)
 
 	hud.Visible         = true
 	queuePanel.Visible  = false
@@ -348,8 +369,8 @@ end)
 hitResult.OnClientEvent:Connect(function(outcome: string, newMyHp: number, newOppHp: number)
 	myHp  = newMyHp
 	oppHp = newOppHp
-	updateHearts(myHearts, myHp)
-	updateHearts(oppHearts, oppHp)
+	updateBar(myBar,  myHp,  myMaxHp,  true)
+	updateBar(oppBar, oppHp, oppMaxHp, false)
 
 	if outcome == "hit" then
 		flashPanel(oppPanel, Color3.fromRGB(180, 35, 35))

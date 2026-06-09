@@ -76,9 +76,11 @@ local GATE_ZONE_NAME: { [string]: string } = {
 -- ─── Player data ──────────────────────────────────────────────────────────────
 local BOUNCE_REWARD = 10
 local BOUNCE_XP     = 2
-local MAX_STAT_PTS  = 10  -- max skill points per stat
+local MAX_STAT_PTS    = 10  -- max skill points per stat
+local HP_BASE         = 3   -- base HP before health stat
+local HP_PER_HEALTH   = 2   -- +HP per health point allocated
 
-type StatAlloc = { jumpHeight: number, jumpSpeed: number, styleBonus: number }
+type StatAlloc = { jumpHeight: number, jumpSpeed: number, styleBonus: number, health: number }
 
 local playerCurrency:   { [number]: number }               = {}
 local playerStyles:     { [number]: { [string]: true } }   = {}
@@ -127,6 +129,16 @@ awardCurrency.Event:Connect(function(player: Player, amount: number)
 	addCurrency(player, amount)
 end)
 
+-- ─── Cross-script max-HP query (used by PillowFightService) ──────────────────
+local getPlayerMaxHp = Instance.new("BindableFunction")
+getPlayerMaxHp.Name   = "GetPlayerMaxHp"
+getPlayerMaxHp.Parent = ServerStorage
+
+getPlayerMaxHp.OnInvoke = function(player: Player): number
+	local stats = playerStats[player.UserId]
+	return HP_BASE + ((stats and stats.health) or 0) * HP_PER_HEALTH
+end
+
 local function addXP(player: Player, amount: number)
 	local uid = player.UserId
 	playerXP[uid] += amount
@@ -146,7 +158,7 @@ local function initPlayer(player: Player)
 	playerXP[uid]        = 0
 	playerLevel[uid]     = 1
 	playerSkillPts[uid]  = 0
-	playerStats[uid]     = { jumpHeight = 0, jumpSpeed = 0, styleBonus = 0 }
+	playerStats[uid]     = { jumpHeight = 0, jumpSpeed = 0, styleBonus = 0, health = 0 }
 	currencyUpdate:FireClient(player, playerCurrency[uid])
 	stylesUpdate:FireClient(player, {})
 	fireStats(player)

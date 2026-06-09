@@ -41,9 +41,10 @@ local STYLE_CATALOG = {
 }
 
 local STAT_CONFIG = {
-	{ id = "jumpHeight", name = "Jump Height", desc = "+4 max altitude per point" },
-	{ id = "jumpSpeed",  name = "Jump Speed",  desc = "Faster height buildup"     },
-	{ id = "styleBonus", name = "Style Bonus", desc = "+10% $ per style per point" },
+	{ id = "jumpHeight", name = "Jump Height", desc = "+4 max altitude per point"        },
+	{ id = "jumpSpeed",  name = "Jump Speed",  desc = "Faster height buildup"            },
+	{ id = "styleBonus", name = "Style Bonus", desc = "+10% $ per style per point"       },
+	{ id = "health",     name = "Health",      desc = "+2 max HP in Pillow Fight per pt" },
 }
 
 local MAX_EQUIPPED = 4
@@ -53,7 +54,7 @@ local ownedCount   = 0
 local equippedIds: { string }         = {}
 local currentData  = {
 	xp = 0, xpNeeded = 100, level = 1, skillPts = 0,
-	stats = { jumpHeight = 0, jumpSpeed = 0, styleBonus = 0 },
+	stats = { jumpHeight = 0, jumpSpeed = 0, styleBonus = 0, health = 0 },
 }
 
 -- ─── ScreenGui ───────────────────────────────────────────────────────────────

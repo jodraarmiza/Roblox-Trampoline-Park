@@ -24,7 +24,7 @@ local gameEnd     = makeRemote("GameEnd")      -- server → client
 local leaveQueue  = makeRemote("LeaveQueue")   -- client → server
 
 -- ─── Constants ────────────────────────────────────────────────────────────────
-local MAX_HP         = 3
+local MAX_HP         = 3   -- fallback before GetPlayerMaxHp is available
 local HIT_RANGE      = 13
 local HIT_COOLDOWN   = 0.7
 local DODGE_DURATION = 0.65
@@ -42,7 +42,13 @@ local BOT_ATTACK_COOLDOWN = 1.1
 local BOT_HIT_ANIM        = "rbxassetid://135446390129712"
 local BOT_WALK_ANIM       = "rbxassetid://913402848" -- default R15 walk
 
-local awardCurrency = ServerStorage:WaitForChild("AwardCurrency") :: BindableEvent
+local awardCurrency  = ServerStorage:WaitForChild("AwardCurrency")  :: BindableEvent
+local getPlayerMaxHp = ServerStorage:WaitForChild("GetPlayerMaxHp") :: BindableFunction
+
+local function playerMaxHp(player: Player): number
+	local ok, hp = pcall(function() return getPlayerMaxHp:Invoke(player) end)
+	return (ok and type(hp) == "number" and hp > 0) and hp or MAX_HP
+end
 
 -- ─── State ────────────────────────────────────────────────────────────────────
 type GameData = {
@@ -305,11 +311,14 @@ local function startGame(p1: Player, p2: Player, bridge: number)
 	tp(p1, cf1)
 	tp(p2, cf2)
 
-	games[p1] = { opponent = p2, myHp = MAX_HP, isDodging = false, dodgeCd = 0, hitCd = 0, spawnCFrame = cf1 }
-	games[p2] = { opponent = p1, myHp = MAX_HP, isDodging = false, dodgeCd = 0, hitCd = 0, spawnCFrame = cf2 }
+	local p1MaxHp = playerMaxHp(p1)
+	local p2MaxHp = playerMaxHp(p2)
 
-	gameStart:FireClient(p1, p2.Name, MAX_HP)
-	gameStart:FireClient(p2, p1.Name, MAX_HP)
+	games[p1] = { opponent = p2, myHp = p1MaxHp, isDodging = false, dodgeCd = 0, hitCd = 0, spawnCFrame = cf1 }
+	games[p2] = { opponent = p1, myHp = p2MaxHp, isDodging = false, dodgeCd = 0, hitCd = 0, spawnCFrame = cf2 }
+
+	gameStart:FireClient(p1, p2.Name, p1MaxHp, p2MaxHp)
+	gameStart:FireClient(p2, p1.Name, p2MaxHp, p1MaxHp)
 	givePillow(p1)
 	givePillow(p2)
 end
@@ -339,9 +348,11 @@ local function startBotGame(player: Player, bridge: number)
 	local botRig = spawnBotRig(botCFrame)
 	print("[PFBot] startBotGame: char=", tostring(char), "botRig=", tostring(botRig))
 
+	local pMaxHp = playerMaxHp(player)
+
 	botGames[player] = {
-		myHp        = MAX_HP,
-		botHp       = MAX_HP,
+		myHp        = pMaxHp,
+		botHp       = pMaxHp,
 		botPos      = cf2.Position,
 		botRig      = botRig,
 		spawnCFrame = cf1,
@@ -354,7 +365,7 @@ local function startBotGame(player: Player, bridge: number)
 	}
 	queueUpdate:FireClient(player, "starting", "BOT")
 	task.delay(0.8, function()
-		gameStart:FireClient(player, "BOT", MAX_HP)
+		gameStart:FireClient(player, "BOT", pMaxHp, pMaxHp)
 		givePillow(player)
 	end)
 end
