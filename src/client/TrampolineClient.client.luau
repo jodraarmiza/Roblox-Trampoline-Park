@@ -430,6 +430,28 @@ currencyUpdate.OnClientEvent:Connect(function(amount: number)
 	popAnimation()
 end)
 
+-- ─── Sprint (Shift to run) ────────────────────────────────────────────────────
+local WALK_SPEED   = 16
+local SPRINT_SPEED = 26
+
+local function setSprint(humanoid: Humanoid, sprinting: boolean)
+	humanoid.WalkSpeed = sprinting and SPRINT_SPEED or WALK_SPEED
+end
+
+UserInputService.InputBegan:Connect(function(input, processed)
+	if input.KeyCode ~= Enum.KeyCode.LeftShift and input.KeyCode ~= Enum.KeyCode.RightShift then return end
+	local char = player.Character
+	local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+	if humanoid then setSprint(humanoid, true) end
+end)
+
+UserInputService.InputEnded:Connect(function(input, processed)
+	if input.KeyCode ~= Enum.KeyCode.LeftShift and input.KeyCode ~= Enum.KeyCode.RightShift then return end
+	local char = player.Character
+	local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+	if humanoid then setSprint(humanoid, false) end
+end)
+
 -- ─── Character setup ──────────────────────────────────────────────────────────
 player.CharacterAdded:Connect(setupCharacter)
 if player.Character then

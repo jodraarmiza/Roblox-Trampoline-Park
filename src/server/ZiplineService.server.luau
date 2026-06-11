@@ -3,7 +3,7 @@ local RunService = game:GetService("RunService")
 
 local ziplinesFolder = workspace:WaitForChild("Ziplines")
 
-local ZIPLINE_ANIM_ID = "rbxassetid://131167548722201"
+local ZIPLINE_ANIM_ID = "rbxassetid://72117247448455"
 
 local function getValue(parent: Instance, name: string, default: any): any
 	local obj = parent:FindFirstChild(name)
