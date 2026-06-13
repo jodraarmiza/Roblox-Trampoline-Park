@@ -633,10 +633,10 @@ end)
 
 -- ─── 3D Shop Trigger ─────────────────────────────────────────────────────────
 local function setupShopTrigger()
-	local trigger = workspace:FindFirstChild("shop trigger")
+	local trigger = workspace:FindFirstChild("shopring", true)
 	if not trigger then
 		workspace.ChildAdded:Connect(function(c)
-			if c.Name == "shop trigger" then setupShopTrigger() end
+			if c.Name == "shopring" then setupShopTrigger() end
 		end)
 		return
 	end

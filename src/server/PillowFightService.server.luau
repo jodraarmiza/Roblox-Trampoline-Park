@@ -435,7 +435,9 @@ local function setupTrigger(part: BasePart)
 end
 
 local function isPillowTrigger(obj: Instance): boolean
-	return obj:IsA("BasePart") and obj.Name:lower():sub(1, 24) == "pillow fight matchmaking"
+	if not obj:IsA("BasePart") then return false end
+	local name = obj.Name:lower():gsub("%s+", "")
+	return name:sub(1, 22) == "pillowfightmatchmaking"
 end
 
 for _, obj in workspace:GetDescendants() do
