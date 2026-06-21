@@ -281,7 +281,7 @@ RunService.Heartbeat:Connect(function()
 	local result = workspace:Raycast(root.Position, Vector3.new(0, -6, 0), rayParams)
 	local onTrampoline = result ~= nil
 		and result.Instance ~= nil
-		and result.Instance.Name == "Trampoline"
+		and (result.Instance.Name == "Trampoline" or result.Instance.Name == "Trexagon")
 
 	if not onTrampoline then
 		if offTrampolineTime == nil then
