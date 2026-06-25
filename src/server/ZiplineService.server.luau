@@ -105,13 +105,21 @@ local function setupPrompt(promptParent: BasePart, fromPos: Vector3, toPos: Vect
 	end)
 end
 
-local function setupLine(line: Instance)
-	local startModel  = line:FindFirstChild("StartModel")
-	local finishModel = line:FindFirstChild("FinishModel")
-	if not startModel or not finishModel then return end
+-- Some Line folders have duplicate/leftover StartModel or FinishModel children;
+-- try each one in order and use the first that actually resolves to an endpoint.
+local function findEndpointAmong(line: Instance, modelName: string, pointName: string): Endpoint?
+	for _, child in line:GetChildren() do
+		if child.Name == modelName then
+			local found = findEndpoint(child, pointName)
+			if found then return found end
+		end
+	end
+	return nil
+end
 
-	local startEnd  = findEndpoint(startModel, "Start")
-	local finishEnd = findEndpoint(finishModel, "Finish")
+local function setupLine(line: Instance)
+	local startEnd  = findEndpointAmong(line, "StartModel", "Start")
+	local finishEnd = findEndpointAmong(line, "FinishModel", "Finish")
 	if not startEnd or not finishEnd then
 		warn("[Zipline] Missing Start/Finish endpoint in", line:GetFullName())
 		return

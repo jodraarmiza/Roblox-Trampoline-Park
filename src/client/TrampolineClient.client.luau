@@ -279,9 +279,9 @@ RunService.Heartbeat:Connect(function()
 
 	-- Raycast dari HRP ke bawah 6 studs (covers R15 & R6, plus landing buffer)
 	local result = workspace:Raycast(root.Position, Vector3.new(0, -6, 0), rayParams)
-	local onTrampoline = result ~= nil
-		and result.Instance ~= nil
-		and (result.Instance.Name == "Trampoline" or result.Instance.Name == "Trexagon")
+	local hitName = result and result.Instance and result.Instance.Name
+	local onTrampoline = hitName == "Trampoline" or hitName == "Trexagon" or hitName == "HUBTrampoline"
+	local givesReward = hitName == "Trampoline" or hitName == "Trexagon"
 
 	if not onTrampoline then
 		if offTrampolineTime == nil then
@@ -313,7 +313,9 @@ RunService.Heartbeat:Connect(function()
 	)
 	bounceHeight = math.min(bounceHeight + HEIGHT_STEP, MAX_HEIGHT)
 
-	bounceReward:FireServer()
+	if givesReward then
+		bounceReward:FireServer()
+	end
 
 	if selectedIndex > 0 and heightThisBounce >= MIN_BACKFLIP_HEIGHT then
 		task.delay(BACKFLIP_TRIGGER_DELAY, tryTriggerBackflip)
