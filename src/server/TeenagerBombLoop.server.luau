@@ -2,12 +2,16 @@ local Players       = game:GetService("Players")
 local ServerStorage  = game:GetService("ServerStorage")
 
 -- ─── Workspace assets ──────────────────────────────────────────────────────────
-local arenaSpawner = workspace:WaitForChild("ArenaDragonSpawner") :: Folder
-local waitingArea  = workspace:WaitForChild("AreaWaitingSpawn")   :: BasePart
-local dragonWall   = workspace:WaitForChild("DragonWall")         :: BasePart
-local surfaceGui   = dragonWall:WaitForChild("SurfaceGui")        :: SurfaceGui
-local statusText   = surfaceGui:WaitForChild("StatusText")        :: TextLabel
-local bombTemplate = ServerStorage:WaitForChild("Bomb")           :: Tool
+-- ArenaDragonSpawner directly contains many BaseParts that are ALL named
+-- "DragonArenaSpawn" (duplicated, never renamed) — GetChildren() returns every
+-- one of them regardless of the shared name; one gets picked at random below.
+local arenaSpawner = workspace:WaitForChild("ArenaDragonSpawner")
+local waitingArea   = workspace:WaitForChild("AreaWaitingSpawn") :: BasePart
+-- Exact-name match — does NOT match the decorative "DragonWalls" (plural) props.
+local dragonWall         = workspace:WaitForChild("DragonWall") :: BasePart
+local timerGui           = dragonWall:WaitForChild("TeenagerTimerGui") :: SurfaceGui
+local statusText         = timerGui:WaitForChild("StatusText") :: TextLabel
+local bombTemplate       = ServerStorage:WaitForChild("Bomb") :: Tool
 
 -- ─── Tuning ────────────────────────────────────────────────────────────────────
 local INTERMISSION_TIME   = 15
@@ -16,10 +20,16 @@ local ELIMINATION_DISPLAY = 3
 local WINNER_DISPLAY      = 5
 local MIN_PLAYERS         = 2
 
+local BLINK_FLASH_DURATION = 0.12 -- how long the red/neon flash itself stays on
+local BLINK_MAX_INTERVAL   = 0.6  -- gap between blinks when the round just started (calm)
+local BLINK_MIN_INTERVAL   = 0.1  -- gap between blinks right before it explodes (panic)
+
 -- ─── State ─────────────────────────────────────────────────────────────────────
 local alivePlayers:   { Player } = {}
 local currentBombTool: Tool?     = nil
 local roundCancelled              = false
+local bombTimeLeft                = 0 -- seconds left in the current round, read by the blink task for pacing
+local blinkGeneration             = 0 -- bumped on every start/stop so stale blink tasks self-terminate
 
 -- ─── Helpers ───────────────────────────────────────────────────────────────────
 local function setStatus(text: string)
@@ -72,10 +82,10 @@ end
 local function teleportToArena(player: Player)
 	local points = getArenaSpawnPoints()
 	if #points == 0 then return end
-	local point = points[math.random(1, #points)]
-	local root  = getCharacterRoot(player)
-	if not root then return end
-	root.CFrame = CFrame.new(point.Position + Vector3.new(0, 3, 0))
+	local randomSpawn = points[math.random(1, #points)]
+	local character = player.Character
+	if not character then return end
+	character:PivotTo(randomSpawn.CFrame + Vector3.new(0, 5, 0))
 end
 
 local function removeFromAlive(player: Player)
@@ -143,12 +153,61 @@ local function explodeAt(position: Vector3)
 	explosion.Parent = workspace
 end
 
+-- ─── Bomb blink effect ─────────────────────────────────────────────────────────
+-- The Handle lives inside the Tool, so it travels along automatically no
+-- matter who currently holds the bomb (or whether it just got passed via
+-- TeenagerBomb.server.luau's Touched hand-off) — no need to resolve the
+-- holder's character, just read the live Tool reference each cycle.
+local function blinkInterval(): number
+	local progress = math.clamp(bombTimeLeft / ROUND_TIME, 0, 1) -- 1 = round just started, 0 = about to explode
+	return BLINK_MIN_INTERVAL + (BLINK_MAX_INTERVAL - BLINK_MIN_INTERVAL) * progress
+end
+
+local function startBombBlink()
+	blinkGeneration += 1
+	local myGeneration = blinkGeneration
+
+	task.spawn(function()
+		while blinkGeneration == myGeneration do
+			local tool   = currentBombTool
+			local handle = tool and tool:FindFirstChild("Handle") :: BasePart?
+
+			if handle and handle.Parent then
+				local originalColor    = handle.Color
+				local originalMaterial = handle.Material
+
+				handle.Color    = Color3.new(1, 0, 0)
+				handle.Material = Enum.Material.Neon
+				task.wait(BLINK_FLASH_DURATION)
+
+				-- Re-check — the round may have ended or the bomb been swapped mid-flash.
+				if handle.Parent then
+					handle.Color    = originalColor
+					handle.Material = originalMaterial
+				end
+			else
+				task.wait(0.1) -- bomb not handed off yet — retry shortly
+			end
+
+			if blinkGeneration == myGeneration then
+				task.wait(blinkInterval())
+			end
+		end
+	end)
+end
+
+-- Bumping the generation makes any in-flight blink task notice and stop on
+-- its own next check, restoring the Handle's appearance before it exits.
+local function stopBombBlink()
+	blinkGeneration += 1
+end
+
 -- ─── Phase: Intermission ───────────────────────────────────────────────────────
 local function runIntermission(): { Player }
 	while true do
 		local timeLeft = INTERMISSION_TIME
 		while timeLeft > 0 do
-			setStatus("Menunggu: " .. timeLeft)
+			setStatus("Waiting: " .. timeLeft)
 			task.wait(1)
 			timeLeft -= 1
 		end
@@ -184,12 +243,18 @@ local function runRoundLoop()
 		if not chooseAndGiveBomb() then break end
 
 		local timeLeft = ROUND_TIME
+		bombTimeLeft = timeLeft
+		startBombBlink()
+
 		while timeLeft > 0 do
 			if roundCancelled or #alivePlayers <= 1 then break end
-			setStatus("Bom meledak: " .. timeLeft)
+			setStatus("Bom Explode: " .. timeLeft)
 			task.wait(1)
 			timeLeft -= 1
+			bombTimeLeft = timeLeft
 		end
+
+		stopBombBlink() -- always stop before the bomb can explode or the round can end
 
 		if roundCancelled or #alivePlayers <= 1 then
 			clearBomb()
