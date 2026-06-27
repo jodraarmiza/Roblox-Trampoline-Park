@@ -14,12 +14,12 @@ local activeBuffsUpdate  = remotes:WaitForChild("ActiveBuffsUpdate")
 
 -- ─── Catalog (subset — harus sinkron dengan ItemShopService) ─────────────────
 local CURRENCY_ITEMS = {
-	{ id = "TrampolineSocks", name = "Trampoline Socks", desc = "+5% jump power selama 5 menit", price = 2000 },
-	{ id = "EnergyDrink",     name = "Energy Drink",     desc = "+8 walk speed selama 60 detik",  price = 800  },
+	{ id = "TrampolineSocks", name = "Trampoline Socks", desc = "+5% jump power selama 5 menit", price = 2000, icon = "rbxassetid://0" },
+	{ id = "EnergyDrink",     name = "Energy Drink",     desc = "+8 walk speed selama 60 detik",  price = 800,  icon = "rbxassetid://0" },
 }
 
 local GAMEPASS_ITEMS = {
-	{ id = "SuperSpringShoes", name = "Super Spring Shoes", desc = "+25% jump power, permanen", gamepassId = 0 },
+	{ id = "SuperSpringShoes", name = "Super Spring Shoes", desc = "+25% jump power, permanen", gamepassId = 0, icon = "rbxassetid://0" },
 }
 
 -- ─── Util ────────────────────────────────────────────────────────────────────
@@ -135,7 +135,7 @@ local function makeSectionHeader(text: string, color: Color3, order: number)
 		fs = 13, font = Enum.Font.GothamBold, color = color })
 end
 
-local function makeItemCard(name: string, desc: string, order: number)
+local function makeItemCard(name: string, desc: string, order: number, iconId: string?)
 	local card = Instance.new("Frame")
 	card.Size = UDim2.new(1,0,0,68)
 	card.BackgroundColor3 = Color3.fromRGB(24,24,32)
@@ -144,9 +144,31 @@ local function makeItemCard(name: string, desc: string, order: number)
 	card.Parent = contentFrame
 	corner(card, 10)
 
-	label(card, { text = name, pos = UDim2.new(0,10,0,8), size = UDim2.new(1,-110,0,22),
+	-- Icon box — placeholder "?" sampai iconId asli dipasang
+	local iconBox = Instance.new("Frame")
+	iconBox.Size = UDim2.new(0,48,0,48)
+	iconBox.Position = UDim2.new(0,10,0.5,-24)
+	iconBox.BackgroundColor3 = Color3.fromRGB(40,40,52)
+	iconBox.BorderSizePixel = 0
+	iconBox.Parent = card
+	corner(iconBox, 8)
+
+	if iconId and iconId ~= "" and iconId ~= "rbxassetid://0" then
+		local img = Instance.new("ImageLabel")
+		img.Size = UDim2.new(1,0,1,0)
+		img.BackgroundTransparency = 1
+		img.Image = iconId
+		img.Parent = iconBox
+		corner(img, 8)
+	else
+		label(iconBox, { text = "?", pos = UDim2.new(0,0,0,0), size = UDim2.new(1,0,1,0),
+			fs = 20, font = Enum.Font.GothamBold, color = Color3.fromRGB(110,110,130),
+			align = Enum.TextXAlignment.Center })
+	end
+
+	label(card, { text = name, pos = UDim2.new(0,68,0,8), size = UDim2.new(1,-168,0,22),
 		fs = 15, font = Enum.Font.GothamBold })
-	label(card, { text = desc, pos = UDim2.new(0,10,0,32), size = UDim2.new(1,-110,0,18),
+	label(card, { text = desc, pos = UDim2.new(0,68,0,32), size = UDim2.new(1,-168,0,18),
 		fs = 12, color = Color3.fromRGB(150,150,160) })
 
 	local btn = Instance.new("TextButton")
@@ -172,7 +194,7 @@ local function buildPanel()
 	makeSectionHeader("💰  Coin Items", Color3.fromRGB(255,200,0), order)
 	for _, item in CURRENCY_ITEMS do
 		order += 1
-		local btn = makeItemCard(item.name, item.desc, order)
+		local btn = makeItemCard(item.name, item.desc, order, item.icon)
 		btn.Text = "$ " .. item.price
 		btn.BackgroundColor3 = Color3.fromRGB(255,200,0)
 		btn.TextColor3 = Color3.fromRGB(0,0,0)
@@ -187,7 +209,7 @@ local function buildPanel()
 	makeSectionHeader("💎  Robux Items", Color3.fromRGB(80,200,255), order)
 	for _, item in GAMEPASS_ITEMS do
 		order += 1
-		local btn = makeItemCard(item.name, item.desc, order)
+		local btn = makeItemCard(item.name, item.desc, order, item.icon)
 		if item.gamepassId and item.gamepassId > 0 then
 			btn.Text = "Robux"
 			btn.BackgroundColor3 = Color3.fromRGB(60,200,120)
