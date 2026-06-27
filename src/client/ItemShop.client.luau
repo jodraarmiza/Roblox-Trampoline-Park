@@ -2,13 +2,15 @@ local Players            = game:GetService("Players")
 local ReplicatedStorage  = game:GetService("ReplicatedStorage")
 local MarketplaceService = game:GetService("MarketplaceService")
 local TweenService       = game:GetService("TweenService")
+local RunService         = game:GetService("RunService")
 
 local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
-local remotes        = ReplicatedStorage:WaitForChild("ItemShopRemotes")
-local buyItemEvent    = remotes:WaitForChild("BuyItem")
-local itemPurchased   = remotes:WaitForChild("ItemPurchased")
+local remotes           = ReplicatedStorage:WaitForChild("ItemShopRemotes")
+local buyItemEvent       = remotes:WaitForChild("BuyItem")
+local itemPurchased      = remotes:WaitForChild("ItemPurchased")
+local activeBuffsUpdate  = remotes:WaitForChild("ActiveBuffsUpdate")
 
 -- ─── Catalog (subset — harus sinkron dengan ItemShopService) ─────────────────
 local CURRENCY_ITEMS = {
@@ -230,13 +232,89 @@ itemPurchased.OnClientEvent:Connect(function(_, itemName: string)
 	end)
 end)
 
--- ─── 3D Shop Trigger ─────────────────────────────────────────────────────────
-local function findFirstBasePart(inst: Instance): BasePart?
-	if inst:IsA("BasePart") then return inst end
-	if inst:IsA("Model") and inst.PrimaryPart then return inst.PrimaryPart end
-	return inst:FindFirstChildWhichIsA("BasePart", true)
+-- ─── Active buff timers (bottom-right) ───────────────────────────────────────
+local buffContainer = Instance.new("Frame")
+buffContainer.Name = "ActiveBuffsContainer"
+buffContainer.AnchorPoint = Vector2.new(1, 1)
+buffContainer.Position = UDim2.new(1, -16, 1, -16)
+buffContainer.Size = UDim2.new(0, 220, 0, 0)
+buffContainer.AutomaticSize = Enum.AutomaticSize.Y
+buffContainer.BackgroundTransparency = 1
+buffContainer.Parent = gui
+
+local buffLayout = Instance.new("UIListLayout")
+buffLayout.SortOrder = Enum.SortOrder.LayoutOrder
+buffLayout.Padding = UDim.new(0, 6)
+buffLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+buffLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+buffLayout.Parent = buffContainer
+
+local function formatRemaining(seconds: number): string
+	seconds = math.max(0, math.floor(seconds))
+	return string.format("%d:%02d", math.floor(seconds / 60), seconds % 60)
 end
 
+local function makeBuffRow(name: string): (Frame, TextLabel)
+	local row = Instance.new("Frame")
+	row.Size = UDim2.new(1, 0, 0, 38)
+	row.BackgroundColor3 = Color3.fromRGB(14, 14, 18)
+	row.BackgroundTransparency = 0.1
+	row.BorderSizePixel = 0
+	row.Parent = buffContainer
+	corner(row, 8)
+	stroke(row, Color3.fromRGB(80,200,255))
+
+	label(row, { text = "⚡", pos = UDim2.new(0,8,0,0), size = UDim2.new(0,22,1,0),
+		fs = 16, align = Enum.TextXAlignment.Center })
+	label(row, { text = name, pos = UDim2.new(0,32,0,5), size = UDim2.new(1,-90,0,16),
+		fs = 12, font = Enum.Font.GothamBold })
+
+	local timeLabel = label(row, { text = "0:00", pos = UDim2.new(1,-56,0,0), size = UDim2.new(0,48,1,0),
+		fs = 14, font = Enum.Font.GothamBold, color = Color3.fromRGB(80,200,255),
+		align = Enum.TextXAlignment.Right })
+
+	return row, timeLabel
+end
+
+local buffRows: { [string]: { frame: Frame, label: TextLabel, expiresAt: number } } = {}
+
+activeBuffsUpdate.OnClientEvent:Connect(function(list: { { id: string, name: string, expiresAt: number } })
+	local seen: { [string]: true } = {}
+	for _, b in list do
+		seen[b.id] = true
+		local entry = buffRows[b.id]
+		if entry then
+			entry.expiresAt = b.expiresAt
+		else
+			local row, timeLabel = makeBuffRow(b.name)
+			buffRows[b.id] = { frame = row, label = timeLabel, expiresAt = b.expiresAt }
+		end
+	end
+	for id, entry in buffRows do
+		if not seen[id] then
+			entry.frame:Destroy()
+			buffRows[id] = nil
+		end
+	end
+end)
+
+RunService.Heartbeat:Connect(function()
+	for id, entry in buffRows do
+		local remaining = entry.expiresAt - tick()
+		if remaining <= 0 then
+			entry.frame:Destroy()
+			buffRows[id] = nil
+		else
+			entry.label.Text = formatRemaining(remaining)
+		end
+	end
+end)
+
+-- ─── 3D Shop Trigger (native ProximityPrompt, sama seperti Style Shop) ───────
+-- Ring/hoop berbentuk lubang di tengah — karakter berdiri di lubangnya dan
+-- tidak pernah benar-benar Touched ke tube ring itu sendiri. ProximityPrompt
+-- dipasang di anchor tak terlihat di tengah ring (bukan di tube-nya) supaya
+-- jangkauan aktivasinya menutupi seluruh area ring.
 local function setupItemShopTrigger()
 	local trigger = workspace:FindFirstChild("itemshopring", true)
 	if not trigger then
@@ -246,15 +324,34 @@ local function setupItemShopTrigger()
 		return
 	end
 
-	local part = findFirstBasePart(trigger)
-	if not part then return end
+	local cf: CFrame, size: Vector3
+	if trigger:IsA("Model") then
+		cf, size = trigger:GetBoundingBox()
+	elseif trigger:IsA("BasePart") then
+		cf, size = trigger.CFrame, trigger.Size
+	else
+		return
+	end
+
+	local radius = math.max(size.X, size.Z) / 2
+
+	local anchor = Instance.new("Part")
+	anchor.Name = "ItemShopPromptAnchor"
+	anchor.Size = Vector3.new(1, 1, 1)
+	anchor.CFrame = cf
+	anchor.Anchored = true
+	anchor.CanCollide = false
+	anchor.CanQuery = false
+	anchor.Transparency = 1
+	anchor.Parent = trigger
 
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.ObjectText = "Item Shop"
 	prompt.ActionText = "Open"
 	prompt.KeyboardKeyCode = Enum.KeyCode.E
-	prompt.MaxActivationDistance = 10
-	prompt.Parent = part
+	prompt.RequiresLineOfSight = false
+	prompt.MaxActivationDistance = radius + 6
+	prompt.Parent = anchor
 	prompt.Triggered:Connect(function(p)
 		if p ~= player then return end
 		panel.Visible = not panel.Visible

@@ -15,9 +15,10 @@ local function makeRemote(name: string)
 	return r
 end
 
-local buyItemEvent    = makeRemote("BuyItem")
-local itemBuffsUpdate = makeRemote("ItemBuffsUpdate")
-local itemPurchased   = makeRemote("ItemPurchased")
+local buyItemEvent      = makeRemote("BuyItem")
+local itemBuffsUpdate   = makeRemote("ItemBuffsUpdate")
+local itemPurchased     = makeRemote("ItemPurchased")
+local activeBuffsUpdate = makeRemote("ActiveBuffsUpdate")
 
 -- ─── Catalog (subset — tambah item lain di sini nanti) ───────────────────────
 -- Currency items: dibeli pakai in-game coins, efeknya sementara (buff + durasi)
@@ -38,7 +39,7 @@ local GAMEPASS_ITEMS = {
 local spendCurrency = ServerStorage:WaitForChild("SpendCurrency") :: BindableFunction
 
 -- ─── Player state ─────────────────────────────────────────────────────────────
-type ActiveBuff = { buffType: string, value: number, expiresAt: number }
+type ActiveBuff = { id: string, name: string, buffType: string, value: number, expiresAt: number }
 
 local activeBuffs:     { [number]: { ActiveBuff } }        = {}
 local ownedGamepasses: { [number]: { [string]: true } }    = {}
@@ -77,20 +78,36 @@ local function fireBuffsUpdate(player: Player)
 	itemBuffsUpdate:FireClient(player, jumpPowerMult, speedBonus)
 end
 
+local function fireActiveBuffsList(player: Player)
+	local uid = player.UserId
+	pruneExpired(uid)
+	local list = {}
+	for _, buff in activeBuffs[uid] or {} do
+		table.insert(list, { id = buff.id, name = buff.name, expiresAt = buff.expiresAt })
+	end
+	activeBuffsUpdate:FireClient(player, list)
+end
+
 local function addTimedBuff(player: Player, item)
 	local uid = player.UserId
 	activeBuffs[uid] = activeBuffs[uid] or {}
 	pruneExpired(uid)
 	table.insert(activeBuffs[uid], {
+		id        = item.id,
+		name      = item.name,
 		buffType  = item.buffType,
 		value     = item.value,
 		expiresAt = tick() + item.duration,
 	})
 	fireBuffsUpdate(player)
+	fireActiveBuffsList(player)
 
 	task.delay(item.duration, function()
 		local p = Players:GetPlayerByUserId(uid)
-		if p then fireBuffsUpdate(p) end
+		if p then
+			fireBuffsUpdate(p)
+			fireActiveBuffsList(p)
+		end
 	end)
 end
 
@@ -112,6 +129,7 @@ Players.PlayerAdded:Connect(function(player: Player)
 	end
 
 	fireBuffsUpdate(player)
+	fireActiveBuffsList(player)
 end)
 
 Players.PlayerRemoving:Connect(function(player: Player)
