@@ -129,6 +129,19 @@ awardCurrency.Event:Connect(function(player: Player, amount: number)
 	addCurrency(player, amount)
 end)
 
+-- ─── Cross-script currency spend (e.g. item shop purchases) ─────────────────
+local spendCurrency = Instance.new("BindableFunction")
+spendCurrency.Name   = "SpendCurrency"
+spendCurrency.Parent = ServerStorage
+
+spendCurrency.OnInvoke = function(player: Player, amount: number): boolean
+	local uid = player.UserId
+	if (playerCurrency[uid] or 0) < amount then return false end
+	playerCurrency[uid] -= amount
+	currencyUpdate:FireClient(player, playerCurrency[uid])
+	return true
+end
+
 -- ─── Cross-script max-HP query (used by PillowFightService) ──────────────────
 local getPlayerMaxHp = Instance.new("BindableFunction")
 getPlayerMaxHp.Name   = "GetPlayerMaxHp"

@@ -46,11 +46,48 @@ local MAX_HEIGHT  = 36   -- +4 per jumpHeight point
 local HEIGHT_STEP = 2    -- +0.3 per jumpSpeed point
 local BOUNCE_CD   = 0.35
 
+-- ─── Item shop buffs (jump power multiplier, speed bonus) ────────────────────
+local itemJumpPowerMult = 1
+local itemSpeedBonus    = 0
+
+-- ─── Sprint state (didefinisikan di awal supaya bisa diakses ItemBuffsUpdate) ─
+local WALK_SPEED   = 16
+local SPRINT_SPEED = 26
+local isSprinting  = false
+
+local function setSprint(humanoid: Humanoid, sprinting: boolean)
+	isSprinting = sprinting
+	humanoid.WalkSpeed = (sprinting and SPRINT_SPEED or WALK_SPEED) + itemSpeedBonus
+end
+
+local baseMaxHeight  = 36
+local baseHeightStep = 2
+
+local function recomputeBounceParams()
+	MAX_HEIGHT  = baseMaxHeight * itemJumpPowerMult
+	HEIGHT_STEP = baseHeightStep * itemJumpPowerMult
+end
+
 -- Apply stats dari server ke bounce parameters
 statsUpdate.OnClientEvent:Connect(function(data)
 	local stats = data.stats or {}
-	MAX_HEIGHT  = 36 + (stats.jumpHeight or 0) * 4
-	HEIGHT_STEP = 2  + (stats.jumpSpeed  or 0) * 0.3
+	baseMaxHeight  = 36 + (stats.jumpHeight or 0) * 4
+	baseHeightStep = 2  + (stats.jumpSpeed  or 0) * 0.3
+	recomputeBounceParams()
+end)
+
+-- Apply item shop buffs (temporary buffs + permanent gamepass buffs)
+local itemShopRemotes = ReplicatedStorage:WaitForChild("ItemShopRemotes")
+local itemBuffsUpdate = itemShopRemotes:WaitForChild("ItemBuffsUpdate")
+
+itemBuffsUpdate.OnClientEvent:Connect(function(jumpPowerMult: number, speedBonus: number)
+	itemJumpPowerMult = jumpPowerMult
+	itemSpeedBonus    = speedBonus
+	recomputeBounceParams()
+
+	local char = player.Character
+	local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+	if humanoid then setSprint(humanoid, isSprinting) end
 end)
 
 -- Delay setelah bounce sebelum backflip di-trigger (biarkan karakter naik dulu)
@@ -433,13 +470,6 @@ currencyUpdate.OnClientEvent:Connect(function(amount: number)
 end)
 
 -- ─── Sprint (Shift to run) ────────────────────────────────────────────────────
-local WALK_SPEED   = 16
-local SPRINT_SPEED = 26
-
-local function setSprint(humanoid: Humanoid, sprinting: boolean)
-	humanoid.WalkSpeed = sprinting and SPRINT_SPEED or WALK_SPEED
-end
-
 UserInputService.InputBegan:Connect(function(input, processed)
 	if input.KeyCode ~= Enum.KeyCode.LeftShift and input.KeyCode ~= Enum.KeyCode.RightShift then return end
 	local char = player.Character
