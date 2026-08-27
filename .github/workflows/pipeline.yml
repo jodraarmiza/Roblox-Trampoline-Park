@@ -1,0 +1,35 @@
+name: CI/CD Pipeline Simulation
+
+# Pipeline ini akan jalan otomatis setiap kali ada Push atau Pull Request ke branch main
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  # 1. Tahap Testing
+  test_job:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout kodingan
+        uses: actions/checkout@v3
+      - name: Jalankan Unit Test
+        run: echo "Menjalankan testing... Semua aman!"
+
+  # 2. Tahap Build (Hanya jalan jika test sukses)
+  build_job:
+    needs: test_job
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build Aplikasi
+        run: echo "Membuat file siap rilis... Build sukses!"
+
+  # 3. Tahap Deploy (Hanya jalan di branch main)
+  deploy_job:
+    needs: build_job
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy ke VPS
+        run: echo "Mengirim update aplikasi ke Server VPS..."
